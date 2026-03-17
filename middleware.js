@@ -9,6 +9,6 @@ export const config = {
      * - /_next (static files)
      * - /favicon.ico
      */
-    "/((?!login|api/auth|_next|favicon.ico).*)",
+    "/((?!login|scan|api/auth|_next|favicon.ico).*)",
   ],
 };

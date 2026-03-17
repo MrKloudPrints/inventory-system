@@ -84,7 +84,7 @@ function PlacardModal({ item, onClose }) {
   const ref = useRef();
   if (!item) return null;
 
-  const qrData = `INV|${item.sku}|${item.style}|${item.color}|${item.size}`;
+  const qrData = typeof window !== "undefined" ? `${window.location.origin}/scan/${encodeURIComponent(item.sku)}` : item.sku;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}} onClick={onClose}>
@@ -566,7 +566,7 @@ export default function BlnkthryInventory() {
                     <div style={{fontSize:11,letterSpacing:3,fontWeight:700,marginBottom:2}}>INVENTORY</div>
                     <div style={{fontSize:9,letterSpacing:2,color:"var(--color-text-secondary, #999)",marginBottom:8}}>{item.sku}</div>
                     <div style={{display:"flex",justifyContent:"center",marginBottom:8}}>
-                      <QRSvg text={`INV|${item.sku}|${item.style}|${item.color}|${item.size}|QTY:${item.current}`} size={80} />
+                      <QRSvg text={`${window.location.origin}/scan/${encodeURIComponent(item.sku)}`} size={80} />
                     </div>
                     <div style={{display:"flex",justifyContent:"space-around",fontSize:11}}>
                       <div>
@@ -682,7 +682,7 @@ export default function BlnkthryInventory() {
               {items.map(item => (
                 <div key={item.sku} style={{border:"1.5px solid #000",padding:"10px 14px",display:"flex",alignItems:"center",gap:14,height:"2in",breakInside:"avoid",pageBreakInside:"avoid"}}>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
-                    <QRSvg text={`INV|${item.sku}|${item.style}|${item.color}|${item.size}`} size={80} />
+                    <QRSvg text={`${window.location.origin}/scan/${encodeURIComponent(item.sku)}`} size={80} />
                     <div style={{fontSize:7,letterSpacing:2,color:"#666",marginTop:4,fontFamily:"monospace"}}>{item.sku}</div>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
