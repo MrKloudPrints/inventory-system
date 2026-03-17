@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import QRCode from "qrcode";
 
 // COST BREAKDOWN (from Kloud Prints PO + ITC freight + WCS customs broker + CBP duties)
 // Freight forwarder (ITC IN-28854): $633.00 | Customs duties (CBP 7501): $1,766.17 | Broker fees (WCS 1030747-01 excl duties): $885.52
@@ -64,83 +65,19 @@ const COLOR_MAP = {
 
 const SIZE_ORDER = ["S","M","L","XL","2XL"];
 
-function generateQR(text, size=120) {
-  const modules = encodeToQR(text);
-  const n = modules.length;
-  const cellSize = size / (n + 8);
-  const offset = cellSize * 4;
-  let paths = "";
-  for (let r = 0; r < n; r++) {
-    for (let c = 0; c < n; c++) {
-      if (modules[r][c]) {
-        paths += `<rect x="${offset + c * cellSize}" y="${offset + r * cellSize}" width="${cellSize}" height="${cellSize}"/>`;
-      }
-    }
-  }
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-    <rect width="${size}" height="${size}" fill="white"/>
-    <g fill="black">${paths}</g>
-  </svg>`;
-}
-
-function encodeToQR(text) {
-  const size = 21;
-  const grid = Array.from({length: size}, () => Array(size).fill(0));
-  const reserved = Array.from({length: size}, () => Array(size).fill(false));
-
-  function addFinderPattern(row, col) {
-    for (let r = -1; r <= 7; r++) {
-      for (let c = -1; c <= 7; c++) {
-        const nr = row + r, nc = col + c;
-        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
-        reserved[nr][nc] = true;
-        if (r === -1 || r === 7 || c === -1 || c === 7) { grid[nr][nc] = 0; }
-        else if (r === 0 || r === 6 || c === 0 || c === 6) { grid[nr][nc] = 1; }
-        else if (r >= 2 && r <= 4 && c >= 2 && c <= 4) { grid[nr][nc] = 1; }
-        else { grid[nr][nc] = 0; }
-      }
-    }
-  }
-  addFinderPattern(0, 0);
-  addFinderPattern(0, size - 7);
-  addFinderPattern(size - 7, 0);
-
-  for (let i = 8; i < size - 8; i++) {
-    reserved[6][i] = true;
-    reserved[i][6] = true;
-    grid[6][i] = i % 2 === 0 ? 1 : 0;
-    grid[i][6] = i % 2 === 0 ? 1 : 0;
-  }
-  reserved[13][8] = true; grid[13][8] = 1;
-
-  const bits = [];
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    for (let b = 7; b >= 0; b--) bits.push((code >> b) & 1);
-  }
-  while (bits.length < 200) bits.push(bits.length % 3 === 0 ? 1 : 0);
-
-  let bitIdx = 0;
-  let upward = true;
-  for (let col = size - 1; col >= 0; col -= 2) {
-    if (col === 6) col = 5;
-    const rows = upward ? Array.from({length: size}, (_, i) => size - 1 - i) : Array.from({length: size}, (_, i) => i);
-    for (const row of rows) {
-      for (const dc of [0, -1]) {
-        const c = col + dc;
-        if (c < 0 || c >= size) continue;
-        if (reserved[row][c]) continue;
-        grid[row][c] = bitIdx < bits.length ? bits[bitIdx] : 0;
-        bitIdx++;
-      }
-    }
-    upward = !upward;
-  }
-  return grid;
-}
-
 function QRSvg({ text, size = 100 }) {
-  return <div dangerouslySetInnerHTML={{ __html: generateQR(text, size) }} />;
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    if (canvasRef.current && text) {
+      QRCode.toCanvas(canvasRef.current, text, {
+        width: size,
+        margin: 2,
+        color: { dark: "#000000", light: "#ffffff" },
+        errorCorrectionLevel: "M",
+      });
+    }
+  }, [text, size]);
+  return <canvas ref={canvasRef} width={size} height={size} />;
 }
 
 function PlacardModal({ item, onClose }) {
