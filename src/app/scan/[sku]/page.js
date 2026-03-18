@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { INITIAL_INVENTORY } from "@/lib/inventory-data";
 
 const REMOVAL_REASONS = ["sale", "sample", "gift", "damaged", "return-to-vendor", "other"];
 const ADDITION_REASONS = ["restock", "return", "correction", "new-shipment"];
@@ -19,7 +20,18 @@ export default function ScanSkuPage() {
   const [success, setSuccess] = useState(null);
 
   useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("inventory_data") || "[]");
+    let data;
+    try {
+      const saved = localStorage.getItem("stock_inv");
+      data = saved ? JSON.parse(saved) : null;
+    } catch {
+      data = null;
+    }
+    // Fall back to seed data if localStorage is empty (e.g. scanning from a different device)
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      data = INITIAL_INVENTORY.map(i => ({ ...i, current: i.received, log: [] }));
+      localStorage.setItem("stock_inv", JSON.stringify(data));
+    }
     const found = data.find((d) => d.sku === sku);
     if (found) {
       setItem(found);
@@ -31,7 +43,7 @@ export default function ScanSkuPage() {
   function handleConfirm() {
     if (!mode || !reason || amount < 1) return;
 
-    const data = JSON.parse(localStorage.getItem("inventory_data") || "[]");
+    const data = JSON.parse(localStorage.getItem("stock_inv") || "[]");
     const idx = data.findIndex((d) => d.sku === sku);
     if (idx === -1) return;
 
@@ -58,7 +70,7 @@ export default function ScanSkuPage() {
     entry.movements.push(movement);
     data[idx] = entry;
 
-    localStorage.setItem("inventory_data", JSON.stringify(data));
+    localStorage.setItem("stock_inv", JSON.stringify(data));
 
     setItem({ ...entry });
     setSuccess({
