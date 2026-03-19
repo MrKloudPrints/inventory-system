@@ -137,14 +137,15 @@ function PlacardModal({ item, onClose }) {
 }
 
 export default function BlnkthryInventory() {
-  const [inventory, setInventory] = useState(() => {
-    try {
-      const saved = localStorage.getItem("stock_inv");
-      return saved ? JSON.parse(saved) : INITIAL_INVENTORY.map(i => ({...i, current: i.received, log: [{type:"initial",qty:i.received,date:new Date().toISOString(),reason:"Initial stock from Kloud Prints PO"}]}));
-    } catch {
-      return INITIAL_INVENTORY.map(i => ({...i, current: i.received, log: [{type:"initial",qty:i.received,date:new Date().toISOString(),reason:"Initial stock from Kloud Prints PO"}]}));
-    }
-  });
+  const [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/inventory")
+      .then((r) => r.json())
+      .then((data) => { setInventory(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   const [view, setView] = useState("dashboard");
   const [selectedSku, setSelectedSku] = useState(null);
@@ -162,9 +163,6 @@ export default function BlnkthryInventory() {
   const [editingPrice, setEditingPrice] = useState(null);
   const [editPriceValue, setEditPriceValue] = useState("");
 
-  useEffect(() => {
-    try { localStorage.setItem("stock_inv", JSON.stringify(inventory)); } catch {}
-  }, [inventory]);
 
   const showToast = (msg, type="success") => {
     setToast({msg, type});
@@ -206,26 +204,29 @@ export default function BlnkthryInventory() {
     setActionNote("");
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (!actionModal) return;
     const qty = parseInt(actionQty);
     if (isNaN(qty) || qty < 1) return;
     const {type, sku} = actionModal;
+    const endpoint = type === "remove" ? "remove" : "add";
 
-    setInventory(prev => prev.map(item => {
-      if (item.sku !== sku) return item;
-      const newQty = type === "remove" ? Math.max(0, item.current - qty) : item.current + qty;
-      const logEntry = {
-        type: type === "remove" ? "removal" : "addition",
-        qty,
-        date: new Date().toISOString(),
-        reason: actionReason,
-        note: actionNote || undefined,
-        newTotal: newQty
-      };
-      return {...item, current: newQty, log: [...item.log, logEntry]};
-    }));
-    showToast(`${type === "remove" ? "Removed" : "Added"} ${qty} unit${qty > 1 ? "s" : ""} — ${sku} (${actionReason})`);
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(sku)}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: qty, reason: actionReason, note: actionNote || undefined }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setInventory(prev => prev.map(item => item.sku === sku ? updated : item));
+        showToast(`${type === "remove" ? "Removed" : "Added"} ${qty} unit${qty > 1 ? "s" : ""} — ${sku} (${actionReason})`);
+      } else {
+        showToast("Failed to update stock", "error");
+      }
+    } catch {
+      showToast("Network error", "error");
+    }
     setActionModal(null);
   };
 
@@ -236,23 +237,28 @@ export default function BlnkthryInventory() {
     setEditPriceValue(String(item[field]));
   };
 
-  const confirmEditPrice = () => {
+  const confirmEditPrice = async () => {
     if (!editingPrice) return;
     const val = parseFloat(editPriceValue);
     if (isNaN(val) || val < 0) return;
     const {sku, field} = editingPrice;
-    setInventory(prev => prev.map(item => {
-      if (item.sku !== sku) return item;
-      const logEntry = {
-        type: "price-change",
-        qty: 0,
-        date: new Date().toISOString(),
-        reason: `${field} changed from $${item[field]} to $${val}`,
-        newTotal: item.current
-      };
-      return {...item, [field]: val, log: [...item.log, logEntry]};
-    }));
-    showToast(`Updated ${editingPrice.field} to $${val} — ${sku}`);
+    const apiField = field === "wholesale" ? "wholesalePrice" : "retailPrice";
+
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(sku)}/price`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: apiField, value: val }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        // Price changes affect all variants of the same product
+        setInventory(prev => prev.map(item => item.style === updated.style ? { ...item, [field]: updated[field] } : item));
+        showToast(`Updated ${field} to $${val} — ${sku}`);
+      }
+    } catch {
+      showToast("Failed to update price", "error");
+    }
     setEditingPrice(null);
   };
 
@@ -269,11 +275,18 @@ export default function BlnkthryInventory() {
     }
   };
 
-  const resetInventory = () => {
+  const resetInventory = async () => {
     if (confirm("Reset all inventory to initial stock levels? This cannot be undone.")) {
-      const fresh = INITIAL_INVENTORY.map(i => ({...i, current: i.received, log: [{type:"initial",qty:i.received,date:new Date().toISOString(),reason:"Reset to initial stock"}]}));
-      setInventory(fresh);
-      showToast("Inventory reset to initial stock levels");
+      try {
+        const res = await fetch("/api/inventory");
+        if (res.ok) {
+          const data = await res.json();
+          setInventory(data);
+          showToast("Inventory reloaded from database");
+        }
+      } catch {
+        showToast("Failed to reload inventory", "error");
+      }
     }
   };
 

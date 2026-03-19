@@ -3,7 +3,6 @@
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { INITIAL_INVENTORY } from "@/lib/inventory-data";
 
 const REMOVAL_REASONS = ["sale", "sample", "gift", "damaged", "return-to-vendor", "other"];
 const ADDITION_REASONS = ["restock", "return", "correction", "new-shipment"];
@@ -16,69 +15,40 @@ export default function ScanSkuPage() {
   const [notFound, setNotFound] = useState(false);
   const [amount, setAmount] = useState(1);
   const [reason, setReason] = useState("");
-  const [mode, setMode] = useState(null); // "add" or "remove"
+  const [mode, setMode] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    let data;
-    try {
-      const saved = localStorage.getItem("stock_inv");
-      data = saved ? JSON.parse(saved) : null;
-    } catch {
-      data = null;
-    }
-    // Fall back to seed data if localStorage is empty (e.g. scanning from a different device)
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      data = INITIAL_INVENTORY.map(i => ({ ...i, current: i.received, log: [] }));
-      localStorage.setItem("stock_inv", JSON.stringify(data));
-    }
-    const found = data.find((d) => d.sku === sku);
-    if (found) {
-      setItem(found);
-    } else {
-      setNotFound(true);
-    }
+    fetch(`/api/inventory/${encodeURIComponent(sku)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => setItem(data))
+      .catch(() => setNotFound(true));
   }, [sku]);
 
-  function handleConfirm() {
-    if (!mode || !reason || amount < 1) return;
+  async function handleConfirm() {
+    if (!mode || !reason || amount < 1 || submitting) return;
+    setSubmitting(true);
 
-    const data = JSON.parse(localStorage.getItem("stock_inv") || "[]");
-    const idx = data.findIndex((d) => d.sku === sku);
-    if (idx === -1) return;
-
-    const entry = data[idx];
-    let newQty = entry.current;
-
-    if (mode === "add") {
-      newQty = entry.current + amount;
-    } else {
-      newQty = entry.current - amount;
-      if (newQty < 0) newQty = 0;
+    const endpoint = mode === "add" ? "add" : "remove";
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(sku)}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: amount, reason }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setItem(updated);
+        setSuccess({ type: mode, quantity: amount, reason, newQty: updated.current });
+      }
+    } catch {
+      // silently fail
     }
-
-    const movement = {
-      type: mode,
-      quantity: amount,
-      reason,
-      date: new Date().toISOString(),
-      note: "",
-    };
-
-    entry.current = newQty;
-    if (!entry.movements) entry.movements = [];
-    entry.movements.push(movement);
-    data[idx] = entry;
-
-    localStorage.setItem("stock_inv", JSON.stringify(data));
-
-    setItem({ ...entry });
-    setSuccess({
-      type: mode,
-      quantity: amount,
-      reason,
-      newQty,
-    });
+    setSubmitting(false);
     setMode(null);
     setReason("");
     setAmount(1);
@@ -108,7 +78,7 @@ export default function ScanSkuPage() {
   }
 
   const reasons = mode === "add" ? ADDITION_REASONS : mode === "remove" ? REMOVAL_REASONS : [];
-  const canConfirm = mode && reason && amount >= 1;
+  const canConfirm = mode && reason && amount >= 1 && !submitting;
   const wouldGoNegative = mode === "remove" && item.current - amount < 0;
 
   return (
@@ -117,7 +87,6 @@ export default function ScanSkuPage() {
         <p style={styles.sectionLabel}>STOCK ADJUSTMENT</p>
       </header>
 
-      {/* SKU Info */}
       <div style={styles.infoCard}>
         <p style={styles.skuDisplay}>{item.sku}</p>
         <p style={styles.itemDetail}>{item.style}</p>
@@ -126,13 +95,11 @@ export default function ScanSkuPage() {
         </p>
       </div>
 
-      {/* Current Quantity */}
       <div style={styles.qtyBlock}>
         <p style={styles.qtyLabel}>CURRENT STOCK</p>
         <p style={styles.qtyValue}>{item.current}</p>
       </div>
 
-      {/* Success Message */}
       {success && (
         <div
           style={{
@@ -150,7 +117,6 @@ export default function ScanSkuPage() {
         </div>
       )}
 
-      {/* Mode Selection */}
       <div style={styles.modeRow}>
         <button
           style={{
@@ -184,7 +150,6 @@ export default function ScanSkuPage() {
         </button>
       </div>
 
-      {/* Amount Control */}
       {mode && (
         <div style={styles.section}>
           <p style={styles.sectionLabel}>QUANTITY</p>
@@ -220,7 +185,6 @@ export default function ScanSkuPage() {
         </div>
       )}
 
-      {/* Reason Selection */}
       {mode && (
         <div style={styles.section}>
           <p style={styles.sectionLabel}>REASON</p>
@@ -242,7 +206,6 @@ export default function ScanSkuPage() {
         </div>
       )}
 
-      {/* Confirm */}
       {mode && (
         <button
           style={{
@@ -253,7 +216,7 @@ export default function ScanSkuPage() {
           disabled={!canConfirm}
           onClick={handleConfirm}
         >
-          CONFIRM {mode === "add" ? "ADDITION" : "REMOVAL"}
+          {submitting ? "UPDATING..." : `CONFIRM ${mode === "add" ? "ADDITION" : "REMOVAL"}`}
         </button>
       )}
 
